@@ -115,6 +115,66 @@ class SimpleRNN(nn.Module):
         # Backpropagate
         loss.backward()
         self.optimizer.step()
+
+    def train_manual(self, x: torch.Tensor, y: torch.Tensor, learning_rate: float) -> None:
+        # x: (seq_len, input_size) -> (4, 1)
+        # y: (seq_len, output_size) -> (4, 1)
+
+        # 1. Forward Pass with Caching
+        h_states = [torch.zeros(1, self.hidden_size)] # h_0: (1, 5)
+        y_hats = []
+        curr_h = h_states[0]
+        for x_t in x:
+            curr_h = self.rnn_cell(x_t.unsqueeze(0), curr_h) # (1, 1) -> (1, 5)
+            h_states.append(curr_h)
+            y_hats.append(self.fc(curr_h)) # (1, 5) -> (1, 1)
+
+        # 2. Initialize Gradients (Gradients match parameter shapes)
+        d_w_ih = torch.zeros_like(self.rnn_cell.weight_ih) # (5, 1)
+        d_w_hh = torch.zeros_like(self.rnn_cell.weight_hh) # (5, 5)
+        d_b_ih = torch.zeros_like(self.rnn_cell.bias_ih)   # (5,)
+        d_b_hh = torch.zeros_like(self.rnn_cell.bias_hh)   # (5,)
+        d_fc_w = torch.zeros_like(self.fc.weight)         # (1, 5)
+        d_fc_b = torch.zeros_like(self.fc.bias)           # (1,)
+        
+        # Error flowing from step t+1 to t
+        dh_next = torch.zeros(1, self.hidden_size)        # (1, 5)
+
+        # 3. Backward Loop
+        for t in reversed(range(len(x))):
+            # dy = (y_hat - y) -> shape: (1, 1)
+            dy = y_hats[t] - y[t].view_as(y_hats[t])
+            
+            # d_fc_w = dy^T @ h_t -> (1, 1) @ (1, 5) = (1, 5)
+            d_fc_w += dy.t() @ h_states[t+1]
+            d_fc_b += dy.squeeze(0)
+
+            # dh = dy @ W_fc + dh_next -> (1, 1) @ (1, 5) + (1, 5) = (1, 5)
+            dh = (dy @ self.fc.weight) + dh_next
+            
+            # dtanh = dh * (1 - h^2) -> (1, 5) element-wise
+            dtanh = dh * (1 - h_states[t+1]**2)
+
+            # d_w_ih = dtanh^T @ x_t -> (5, 1) @ (1, 1) = (5, 1)
+            d_w_ih += dtanh.t() @ x[t].unsqueeze(0)
+            
+            # d_w_hh = dtanh^T @ h_{t-1} -> (5, 1) @ (1, 5) = (5, 5)
+            d_w_hh += dtanh.t() @ h_states[t]
+            
+            d_b_ih += dtanh.squeeze(0)
+            d_b_hh += dtanh.squeeze(0)
+
+            # dh_next = dtanh @ W_hh -> (1, 5) @ (5, 5) = (1, 5)
+            dh_next = dtanh @ self.rnn_cell.weight_hh
+
+        # 4. Manual Update
+        with torch.no_grad():
+            self.rnn_cell.weight_ih -= learning_rate * d_w_ih
+            self.rnn_cell.weight_hh -= learning_rate * d_w_hh
+            self.rnn_cell.bias_ih -= learning_rate * d_b_ih
+            self.rnn_cell.bias_hh -= learning_rate * d_b_hh
+            self.fc.weight -= learning_rate * d_fc_w
+            self.fc.bias -= learning_rate * d_fc_b
  
 import torch 
 torch.manual_seed(42) 
