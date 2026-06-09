@@ -54,7 +54,7 @@ def self_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.T
     d_k = k.size(-1) # d_model
     q_k = torch.matmul(q,k.permute(1,0)) # q (seq_len,d_q) X k.T (d_k,seq_len)
     atten_score = q_k/math.sqrt(d_k)
-    atten_wt = softmax_logits_probability(atten_score,axis=-1) #  (seq_len,seq_len)
+    atten_wt = F.softmax(atten_score,dim=-1) #  (seq_len,seq_len)
     attn_output = torch.matmul(atten_wt,v) #  (seq_len,d_v)
     return attn_output
 
