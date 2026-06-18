@@ -3,7 +3,6 @@ import math
 import torch.nn.functional as F
 
 
-
 def self_attention(q,k,v)->torch.Tensor:
     """
     Compute scaled dot-product self-attention then add mask
